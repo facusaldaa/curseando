@@ -13,7 +13,11 @@ COPY . .
 ARG API_URL=http://backend:8080
 ENV API_URL=$API_URL
 
-# Build Angular application
+# Run tests (build fails if tests fail)
+# Use CI mode - Jest handles TypeScript compilation
+RUN CI=true npm test -- --ci --passWithNoTests || (echo "Tests failed!" && exit 1)
+
+# Build Angular application (test files are excluded via tsconfig.json)
 RUN npm run build -- --configuration production
 
 # Debug: List build output
