@@ -99,8 +99,8 @@ Once all services are running, access:
 
 - **Frontend**: http://localhost:4200
 - **Backend API**: http://localhost:8081/api
-- **Swagger UI**: http://localhost:8081/swagger-ui.html
-- **API Docs**: http://localhost:8081/api-docs
+- **Swagger UI**: http://localhost:8081/swagger-ui/index.html#/
+- **API Docs (OpenAPI JSON)**: http://localhost:8081/api-docs (raw OpenAPI specification - used by Swagger UI)
 
 **Note**: Ports can be customized by setting environment variables before running `docker-compose up`.
 
