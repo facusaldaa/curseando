@@ -6,7 +6,10 @@ This directory contains screenshots of the Curseando Online Course Platform appl
 
 The following screenshots have been captured to document the application's user interface and functionality:
 
-### 1. Homepage - All Courses (`homepage-all-courses.png`)
+### 1. Homepage - All Courses
+
+![Homepage - All Courses](homepage-all-courses.png)
+
 - **Description**: Main course catalog page showing all available courses
 - **Features**: 
   - Course filtering buttons (All, Beginner, Intermediate, Advanced)
@@ -14,28 +17,40 @@ The following screenshots have been captured to document the application's user 
   - Shows course details: instructor, duration, difficulty level, enrollment status, and availability
   - Displays 5 courses: Microservices Architecture, Web Development with Angular, Full-Stack Development, Advanced Spring Boot, and Introduction to Java
 
-### 2. Beginner Filtered View (`beginner-filtered.png`)
+### 2. Beginner Filtered View
+
+![Beginner Filtered View](beginner-filtered.png)
+
 - **Description**: Course catalog filtered to show only Beginner level courses
 - **Features**: 
   - Shows courses with green "BEGINNER" difficulty badges
   - Demonstrates the filtering functionality
   - Displays: Web Development with Angular and Introduction to Java Programming
 
-### 3. Intermediate Filtered View (`intermediate-filtered.png`)
+### 3. Intermediate Filtered View
+
+![Intermediate Filtered View](intermediate-filtered.png)
+
 - **Description**: Course catalog filtered to show only Intermediate level courses
 - **Features**: 
   - Shows courses with yellow "INTERMEDIATE" difficulty badges
   - Demonstrates the filtering functionality
   - Displays: Full-Stack Development with Spring Boot and React, Advanced Spring Boot Development
 
-### 4. Advanced Filtered View (`advanced-filtered.png`)
+### 4. Advanced Filtered View
+
+![Advanced Filtered View](advanced-filtered.png)
+
 - **Description**: Course catalog filtered to show only Advanced level courses
 - **Features**: 
   - Shows courses with red "ADVANCED" difficulty badges
   - Demonstrates the filtering functionality
   - Displays: Microservices Architecture with Docker
 
-### 5. Course Detail & Enrollment Page (`course-detail-enrollment.png`)
+### 5. Course Detail & Enrollment Page
+
+![Course Detail & Enrollment Page](course-detail-enrollment.png)
+
 - **Description**: Individual course detail page with enrollment form
 - **Features**: 
   - Course information display
@@ -43,7 +58,10 @@ The following screenshots have been captured to document the application's user 
   - "Enroll Now" button
   - Back to courses navigation button
 
-### 6. Validation - Course Full (`validation-course-full.png`)
+### 6. Validation - Course Full
+
+![Validation - Course Full](validation-course-full.png)
+
 - **Description**: Error message displayed when attempting to enroll in a course that has reached maximum capacity
 - **Features**: 
   - Shows "Course Full" message
@@ -51,7 +69,10 @@ The following screenshots have been captured to document the application's user 
   - Shows enrollment status: 30/30 enrolled with 0 available spots
   - Example course: Advanced Spring Boot Development
 
-### 7. Validation - Duplicate Enrollment (`validation-duplicate-enrollment.png`)
+### 7. Validation - Duplicate Enrollment
+
+![Validation - Duplicate Enrollment](validation-duplicate-enrollment.png)
+
 - **Description**: Error message displayed when attempting to enroll the same student (email) twice in a course
 - **Features**: 
   - Shows error message: "Student with email {email} is already enrolled in this course"
