@@ -1,0 +1,54 @@
+@startuml Class Diagram - Curseando Domain Model
+
+title Class Diagram - Curseando Domain Model
+skinparam classAttributeIconSize 0
+
+package "com.curseando.model" {
+    class Course {
+        - Long id
+        - String title
+        - String instructor
+        - String duration
+        - DifficultyLevel difficulty
+        - String description
+        - Integer maxCapacity
+        - Integer enrolledCount
+        + Integer getAvailableSpots()
+        + boolean isFull()
+    }
+
+    class Student {
+        - Long id
+        - String fullName
+        - String email
+    }
+
+    class Enrollment {
+        - Long id
+        - LocalDateTime enrollmentDate
+    }
+
+    enum DifficultyLevel {
+        BEGINNER
+        INTERMEDIATE
+        ADVANCED
+    }
+
+    Course "1" *-- "many" Enrollment : has
+    Student "1" *-- "many" Enrollment : has
+    Course ..> DifficultyLevel : uses
+}
+
+note right of Course
+    Business rules:
+    - enrolledCount cannot exceed maxCapacity
+    - getAvailableSpots() = maxCapacity - enrolledCount
+end note
+
+note right of Enrollment
+    Unique constraint:
+    (course_id, student_id)
+    Prevents duplicate enrollments
+end note
+
+@enduml

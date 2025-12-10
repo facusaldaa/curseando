@@ -1,0 +1,571 @@
+# General Project Rules - Curseando
+
+**You are working on Curseando, a full-stack course platform with Spring Boot backend and Angular frontend. Follow these general project rules and conventions across all layers of the application.**
+
+## Project Overview
+
+Curseando is a full-stack course platform featuring:
+- **Backend**: Spring Boot 3.x with PostgreSQL
+- **Frontend**: Angular 15+ with Tailwind CSS
+- **State Management**: Angular Signals (preferred over RxJS)
+- **Containerization**: Docker and Docker Compose
+- **Architecture**: Monorepo with separate backend and frontend directories
+- **Design Documentation**: PlantUML diagrams in `backend/docs/` for architecture and domain modeling
+
+## Design Documentation
+
+**Backend design files are located in `backend/docs/`:**
+- PlantUML (`.puml`) files document the architecture, domain model, and key flows
+- Always check these files before implementing features or making architectural changes
+- Update design files when making structural changes to keep documentation in sync
+
+## Code Style & Conventions
+
+### General Principles
+
+- Write clean, readable, maintainable code
+- Use meaningful names for variables, methods, classes, files
+- Keep functions/methods focused (single responsibility principle)
+- Add comments for complex logic, not obvious code
+- Follow SOLID principles
+- Prefer composition over inheritance
+- DRY (Don't Repeat Yourself) - but don't over-abstract
+- KISS (Keep It Simple, Stupid)
+
+### Naming Conventions
+
+**Backend (Java/Spring Boot):**
+- Classes: `PascalCase` (e.g., `CourseService`, `EnrollmentController`)
+- Methods/Variables: `camelCase` (e.g., `findCourseById`, `enrolledCount`)
+- Constants: `ALL_CAPS` (e.g., `MAX_RETRY_ATTEMPTS`)
+- Packages: `lowercase` (e.g., `com.curseando.service`)
+
+**Frontend (TypeScript/Angular):**
+- Classes: `PascalCase` (e.g., `CourseService`, `CourseCatalogComponent`)
+- Methods/Variables: `camelCase` (e.g., `getCourses`, `isLoading`)
+- Constants: `ALL_CAPS` (e.g., `API_BASE_URL`)
+- Files: `kebab-case` (e.g., `course-catalog.component.ts`)
+- Interfaces: `PascalCase` (e.g., `Course`, `EnrollmentRequest`)
+
+**Database:**
+- Tables: `snake_case` plural (e.g., `courses`, `enrollments`)
+- Columns: `snake_case` (e.g., `course_id`, `enrolled_count`)
+- Indexes: `idx_table_column` (e.g., `idx_courses_difficulty`)
+
+### File Organization
+
+**Backend Structure:**
+```
+backend/
+├── src/main/java/com/curseando/
+│   ├── controller/
+│   ├── service/
+│   ├── repository/
+│   ├── model/
+│   ├── dto/
+│   ├── exception/
+│   └── config/
+└── src/main/resources/
+    ├── application.properties
+    └── data.sql (optional)
+```
+
+**Frontend Structure:**
+```
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── core/
+│   │   ├── shared/
+│   │   └── features/
+│   ├── assets/
+│   └── environments/
+└── angular.json
+```
+
+## Git Workflow
+
+### Commit Messages
+
+Use descriptive commit messages following conventional commits:
+
+**Format:**
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+
+**Examples:**
+```
+feat(backend): Add course enrollment endpoint
+
+Implement POST /api/enrollments endpoint with validation
+for course capacity and duplicate enrollment checks.
+
+fix(frontend): Resolve course filter not updating signal
+
+refactor(backend): Extract enrollment validation to service method
+
+docs: Update README with Docker setup instructions
+```
+
+### Branching Strategy
+
+- Use `main` or `master` for production-ready code
+- Create feature branches: `feature/course-enrollment`
+- Create bugfix branches: `fix/enrollment-validation`
+- Keep commits atomic and logical
+
+### Commit Frequency
+
+- Commit frequently with logical units
+- Don't commit broken code
+- Don't commit commented-out code
+- Don't commit sensitive data (passwords, API keys)
+
+## Error Handling
+
+### Backend Error Handling
+
+- Handle errors gracefully at all layers
+- Use custom exceptions for business rule violations
+- Return consistent error response format:
+```json
+{
+  "error": "CourseFullException",
+  "message": "Course with ID 1 is full",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+- Map exceptions to appropriate HTTP status codes
+- Log errors with appropriate level (ERROR, WARN, INFO)
+
+### Frontend Error Handling
+
+- Display user-friendly error messages
+- Use Tailwind alert components for errors/success
+- Handle HTTP errors gracefully
+- Show loading states during API calls
+- Use signals for error state: `error = signal<string | null>(null)`
+
+**Example:**
+```typescript
+enroll(courseId: number, request: EnrollmentRequest): void {
+  this.loading.set(true);
+  this.error.set(null);
+  
+  this.http.post('/api/enrollments', { courseId, ...request })
+    .pipe(
+      catchError(err => {
+        const message = this.getErrorMessage(err);
+        this.error.set(message);
+        return of(null);
+      })
+    )
+    .subscribe(response => {
+      this.loading.set(false);
+      if (response) {
+        this.success.set(true);
+      }
+    });
+}
+```
+
+## Validation
+
+### Backend Validation
+
+- Validate input at controller level with `@Valid`
+- Validate business rules in service layer
+- Use Jakarta Validation annotations: `@NotNull`, `@NotBlank`, `@Email`, `@Min`, `@Max`
+- Create custom validators for complex rules
+- Return clear validation error messages
+
+### Frontend Validation
+
+- Validate input on frontend for better UX
+- Use Angular reactive forms with validators
+- Display validation errors inline
+- Remember: Backend validation is the source of truth
+- Frontend validation improves UX but doesn't replace backend validation
+
+## Testing
+
+### Backend Testing
+
+- Write unit tests for services (mock repositories)
+- Write integration tests for controllers (`@SpringBootTest`)
+- Write repository tests (`@DataJpaTest`)
+- Test edge cases and error scenarios
+- Use meaningful test names: `shouldThrowExceptionWhenCourseIsFull()`
+
+**Example:**
+```java
+@Test
+void shouldThrowExceptionWhenCourseIsFull() {
+    // Given
+    Course course = createFullCourse();
+    EnrollmentRequest request = createEnrollmentRequest();
+    
+    // When/Then
+    assertThrows(CourseFullException.class, () -> {
+        enrollmentService.enroll(course.getId(), request);
+    });
+}
+```
+
+### Frontend Testing
+
+- Write unit tests for components and services
+- Test component rendering and user interactions
+- Test service methods and HTTP calls
+- Use Angular testing utilities (`TestBed`, `HttpTestingController`)
+
+## Documentation
+
+### Code Documentation
+
+- Keep README.md up to date
+- Document API endpoints (use Springdoc OpenAPI/Swagger)
+- Add JavaDoc for public APIs
+- Add comments for complex logic
+- Document environment variables
+- Include setup instructions
+
+### README Structure
+
+```markdown
+# Curseando
+
+## Overview
+Brief description of the project
+
+## Prerequisites
+- Docker and Docker Compose
+- (Optional) Java 17+, Node.js 18+
+
+## Installation
+1. Clone repository
+2. Copy .env.example to .env
+3. Run `docker-compose up -d`
+
+## Running
+- Start: `docker-compose up -d`
+- Stop: `docker-compose down`
+- Logs: `docker-compose logs -f`
+
+## API Documentation
+- Swagger UI: http://localhost:8080/swagger-ui.html
+
+## Project Structure
+- backend/ - Spring Boot application
+- frontend/ - Angular application
+
+## Environment Variables
+Document all environment variables
+
+## Troubleshooting
+Common issues and solutions
+```
+
+## Security Considerations
+
+### General Security
+
+- Never commit secrets (use .env files)
+- Add `.env` to `.gitignore`
+- Use environment variables for sensitive data
+- Validate and sanitize all user input
+- Use parameterized queries (JPA handles this)
+- Configure CORS appropriately
+- Use HTTPS in production
+
+### Backend Security
+
+- Validate all input at controller and service layers
+- Use `@PreAuthorize` for authorization (if adding Spring Security)
+- Sanitize error messages (don't expose internal details)
+- Use proper password encoding (BCrypt) if adding authentication
+- Rate limiting for API endpoints (if needed)
+
+### Frontend Security
+
+- Prevent XSS by using Angular's built-in sanitization
+- Avoid `innerHTML` unless using `DomSanitizer`
+- Validate input before sending to backend
+- Use HTTPS in production
+- Don't store sensitive data in localStorage
+
+## Performance
+
+### Backend Performance
+
+- Optimize database queries (avoid N+1 problems)
+- Use pagination for large datasets
+- Implement caching where appropriate (`@Cacheable`)
+- Use connection pooling (HikariCP default)
+- Add database indexes for frequently queried columns
+- Use `@EntityGraph` or `JOIN FETCH` to avoid N+1 queries
+
+### Frontend Performance
+
+- Use `OnPush` change detection with signals
+- Lazy load routes when appropriate
+- Use `trackBy` function in `@for` for large lists
+- Optimize bundle size (tree-shaking)
+- Use `@defer` for non-critical components
+- Use `NgOptimizedImage` for images
+- Minimize API calls (batch when possible)
+
+## Accessibility
+
+- Use semantic HTML elements
+- Provide alt text for images
+- Ensure keyboard navigation works
+- Use ARIA labels where appropriate
+- Test with screen readers (if time permits)
+- Ensure sufficient color contrast
+- Use proper heading hierarchy (h1, h2, h3)
+
+## Responsive Design
+
+- Mobile-first approach
+- Test on multiple screen sizes
+- Use Tailwind responsive utilities (`md:`, `lg:`, `xl:`)
+- Ensure touch targets are adequate size (minimum 44x44px)
+- Test on real devices when possible
+
+## API Design
+
+### RESTful Conventions
+
+- Use RESTful conventions:
+  - GET for retrieving resources
+  - POST for creating resources
+  - PUT for updating resources
+  - DELETE for deleting resources
+- Use proper HTTP status codes:
+  - 200 OK: Successful GET, PUT
+  - 201 Created: Successful POST
+  - 204 No Content: Successful DELETE
+  - 400 Bad Request: Validation errors
+  - 404 Not Found: Resource not found
+  - 409 Conflict: Business rule violations
+  - 500 Internal Server Error: Unexpected errors
+
+### API Endpoints
+
+**Courses:**
+- `GET /api/courses` - List all courses
+- `GET /api/courses?difficulty={level}` - Filter by difficulty
+- `GET /api/courses/{id}` - Get course details
+
+**Enrollments:**
+- `POST /api/enrollments` - Create enrollment
+  - Body: `{ "courseId": 1, "fullName": "...", "email": "..." }`
+
+### Response Format
+
+- Return consistent JSON structure
+- Use DTOs, not entities directly
+- Include relevant metadata when needed
+
+## State Management
+
+### Angular Signals (Preferred)
+
+- Use signals for component and service state
+- Use `computed()` for derived state
+- Use `effect()` sparingly (side effects only)
+- Prefer signals over RxJS for simple state management
+
+### RxJS (When Needed)
+
+- Use RxJS for HTTP requests (HttpClient returns Observables)
+- Use RxJS for complex async operations (debounce, throttle, combineLatest)
+- Use RxJS operators when needed (map, filter, switchMap, etc.)
+
+## Styling
+
+### Tailwind CSS
+
+- Use utility-first approach
+- Use Tailwind classes directly in templates
+- Follow Coursera-inspired design
+- Maintain consistent spacing and typography
+- Use semantic color scheme (blues, whites, grays)
+- Ensure good contrast ratios
+- Use responsive utilities (`md:`, `lg:`, `xl:`)
+
+### Design System
+
+- Cards: `bg-white rounded-lg shadow-md p-6`
+- Buttons: `bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded`
+- Forms: Use `@tailwindcss/forms` plugin
+- Grid: `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`
+- Alerts: `bg-green-50 border border-green-200 text-green-800`
+
+## Environment Configuration
+
+### Backend Environment Variables
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/curseando
+SPRING_DATASOURCE_USERNAME=postgres
+SPRING_DATASOURCE_PASSWORD=postgres
+SPRING_JPA_HIBERNATE_DDL_AUTO=update
+SERVER_PORT=8080
+```
+
+### Frontend Environment Variables
+
+```typescript
+// environment.ts
+export const environment = {
+  production: false,
+  apiUrl: 'http://localhost:8080/api'
+};
+```
+
+### Docker Environment Variables
+
+- Use `.env` file for Docker Compose
+- Use build args for build-time configuration
+- Use environment variables for runtime configuration
+- Document all environment variables in README
+
+## Dependencies
+
+### Backend Dependencies
+
+- Spring Boot 3.x
+- Spring Data JPA
+- PostgreSQL Driver
+- Jakarta Validation
+- Spring Boot DevTools (development)
+
+### Frontend Dependencies
+
+- Angular 15+
+- Tailwind CSS
+- @tailwindcss/forms
+- RxJS (included with Angular)
+
+### Dependency Management
+
+- Keep dependencies up to date
+- Use stable versions (not alpha/beta)
+- Document why specific versions are used
+- Minimize dependencies when possible
+- Review dependencies for security vulnerabilities
+
+## Code Review Checklist
+
+- [ ] Code follows project conventions
+- [ ] No hardcoded values (use config/env)
+- [ ] Error handling is appropriate
+- [ ] Validation is in place (frontend and backend)
+- [ ] Tests are written (if applicable)
+- [ ] Documentation is updated
+- [ ] No sensitive data committed
+- [ ] Performance considerations addressed
+- [ ] Accessibility considered
+- [ ] Responsive design tested
+
+## Common Patterns
+
+### Backend Service Pattern
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class CourseService {
+    private final CourseRepository courseRepository;
+    
+    public CourseService(CourseRepository courseRepository) {
+        this.courseRepository = courseRepository;
+    }
+    
+    public List<Course> findAll() {
+        return courseRepository.findAll();
+    }
+    
+    @Transactional
+    public Course create(Course course) {
+        // Validation
+        // Business logic
+        return courseRepository.save(course);
+    }
+}
+```
+
+### Frontend Service Pattern
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class CourseService {
+  private http = inject(HttpClient);
+  
+  courses = signal<Course[]>([]);
+  loading = signal<boolean>(false);
+  error = signal<string | null>(null);
+  
+  loadCourses(): void {
+    this.loading.set(true);
+    this.http.get<Course[]>('/api/courses')
+      .subscribe({
+        next: (courses) => {
+          this.courses.set(courses);
+          this.loading.set(false);
+        },
+        error: (err) => {
+          this.error.set(err.message);
+          this.loading.set(false);
+        }
+      });
+  }
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Backend won't start:**
+- Check database connection
+- Check environment variables
+- Check logs: `docker-compose logs backend`
+
+**Frontend can't connect to backend:**
+- Check backend is running
+- Check CORS configuration
+- Check API URL in environment
+
+**Database connection issues:**
+- Check postgres is running
+- Check connection string
+- Check credentials
+
+**Port conflicts:**
+- Change ports in `.env` file
+- Check what's using ports
+
+## Reference
+
+- Spring Boot Documentation: https://spring.io/projects/spring-boot
+- Angular Documentation: https://angular.dev
+- Tailwind CSS Documentation: https://tailwindcss.com/docs
+- Docker Documentation: https://docs.docker.com
+- PostgreSQL Documentation: https://www.postgresql.org/docs/

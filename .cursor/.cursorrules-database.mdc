@@ -1,0 +1,444 @@
+# Database Rules - PostgreSQL & JPA
+
+**You are an expert in PostgreSQL, Spring Data JPA, database design, and query optimization. Your role is to provide guidance on database schema design, JPA entity mapping, query optimization, and data persistence best practices.**
+
+## PostgreSQL Guidelines
+
+### Database Design Principles
+
+- Use PostgreSQL 15+ for production-like environment
+- Use meaningful table names (plural, snake_case): `courses`, `students`, `enrollments`
+- Use meaningful column names (snake_case): `course_id`, `enrolled_count`, `created_at`
+- Add indexes for foreign keys and frequently queried columns
+- Use appropriate data types:
+  - `BIGSERIAL` or `SERIAL` for auto-increment IDs (use BIGSERIAL for large datasets)
+  - `VARCHAR(n)` for strings with length limits (e.g., `VARCHAR(200)` for titles)
+  - `TEXT` for long descriptions (unlimited length)
+  - `INTEGER` for counts and numbers
+  - `TIMESTAMP` or `TIMESTAMP WITH TIME ZONE` for dates/times
+  - `ENUM` types or `VARCHAR` with CHECK constraints for enums
+  - `BOOLEAN` for true/false values
+
+### Constraints
+
+**Primary Keys:**
+- Always define primary keys: `PRIMARY KEY` on `id` columns
+- Use `BIGSERIAL` for primary keys to support large datasets
+- Use `@Id` with `@GeneratedValue(strategy = GenerationType.IDENTITY)` in JPA
+
+**Foreign Keys:**
+- Define foreign keys: `FOREIGN KEY (course_id) REFERENCES courses(id)`
+- Use `ON DELETE CASCADE` or `ON DELETE RESTRICT` appropriately
+- JPA handles foreign keys automatically with `@ManyToOne` and `@OneToMany`
+
+**Unique Constraints:**
+- Use `UNIQUE` constraints: `UNIQUE (course_id, student_email)` for preventing duplicates
+- Add unique constraints at database level and entity level
+- Use `@Table(uniqueConstraints = @UniqueConstraint(...))` in JPA
+
+**Not Null Constraints:**
+- Use `NOT NULL` for required fields
+- Use `@Column(nullable = false)` in JPA
+
+**Check Constraints:**
+- Use `CHECK` constraints: `CHECK (enrolled_count <= max_capacity)`
+- Validate business rules at database level
+
+**Example Schema:**
+```sql
+CREATE TABLE courses (
+    id BIGSERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    instructor VARCHAR(100) NOT NULL,
+    duration VARCHAR(50) NOT NULL,
+    difficulty VARCHAR(20) NOT NULL CHECK (difficulty IN ('BEGINNER', 'INTERMEDIATE', 'ADVANCED')),
+    description TEXT,
+    max_capacity INTEGER NOT NULL CHECK (max_capacity > 0),
+    enrolled_count INTEGER NOT NULL DEFAULT 0 CHECK (enrolled_count >= 0 AND enrolled_count <= max_capacity),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE students (
+    id BIGSERIAL PRIMARY KEY,
+    full_name VARCHAR(200) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE enrollments (
+    id BIGSERIAL PRIMARY KEY,
+    course_id BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    enrollment_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (course_id, student_id)
+);
+
+-- Indexes
+CREATE INDEX idx_enrollments_course_id ON enrollments(course_id);
+CREATE INDEX idx_enrollments_student_id ON enrollments(student_id);
+CREATE INDEX idx_courses_difficulty ON courses(difficulty);
+CREATE INDEX idx_courses_available ON courses(enrolled_count, max_capacity);
+```
+
+### Relationships
+
+**One-to-Many:**
+- Use `@OneToMany` / `@ManyToOne` (Course -> Enrollments)
+- Use `@JoinColumn` to specify foreign key column names
+- Use `cascade` options carefully (usually `CascadeType.PERSIST`, `CascadeType.REMOVE`)
+- Use `FetchType.LAZY` for `@ManyToOne` (default, prevents N+1 queries)
+
+**Many-to-Many:**
+- Use join table (Enrollment entity) instead of `@ManyToMany`
+- Provides more control and allows additional fields (enrollment_date)
+- Use `@ManyToOne` on both sides of the join table
+
+**Example Entity Relationships:**
+```java
+@Entity
+@Table(name = "courses")
+public class Course {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Enrollment> enrollments = new ArrayList<>();
+    
+    // Use helper method to get enrolled count
+    public int getEnrolledCount() {
+        return enrollments.size();
+    }
+}
+
+@Entity
+@Table(name = "enrollments", 
+       uniqueConstraints = @UniqueConstraint(columnNames = {"course_id", "student_id"}))
+public class Enrollment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id", nullable = false)
+    private Course course;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "student_id", nullable = false)
+    private Student student;
+    
+    @Column(name = "enrollment_date", nullable = false)
+    private LocalDateTime enrollmentDate = LocalDateTime.now();
+}
+```
+
+### JPA Mapping Best Practices
+
+**Entity Annotations:**
+- Use `@Entity` with `@Table(name = "table_name")` for explicit table names
+- Use `@Id` with `@GeneratedValue(strategy = GenerationType.IDENTITY)` for auto-increment
+- Use `@Column(name = "column_name")` for explicit column names
+- Use `@Enumerated(EnumType.STRING)` for enum fields (preferred over ORDINAL)
+- Use `@CreatedDate` and `@LastModifiedDate` with `@EntityListeners(AuditingEntityListener.class)`
+- Use `@ManyToOne(fetch = FetchType.LAZY)` for relationships (default, prevents N+1)
+- Use `@OneToMany(mappedBy = "...")` for inverse side of relationships
+
+**Auditing:**
+```java
+@Entity
+@EntityListeners(AuditingEntityListener.class)
+public class Course {
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+    
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+}
+
+// Enable auditing in configuration
+@Configuration
+@EnableJpaAuditing
+public class JpaConfig {
+}
+```
+
+### Queries
+
+**Spring Data JPA Method Naming:**
+- Use method naming conventions: `findBy...`, `countBy...`, `existsBy...`, `deleteBy...`
+- Use `@Query` for complex queries (JPQL or native SQL)
+- Use `@Modifying` with `@Query` for update/delete operations
+- Return `Optional<T>` for single results when appropriate
+- Use `@Param` for named parameters
+
+**Example Repository:**
+```java
+@Repository
+public interface CourseRepository extends JpaRepository<Course, Long> {
+    // Method naming
+    List<Course> findByDifficulty(DifficultyLevel difficulty);
+    List<Course> findByDifficultyAndEnrolledCountLessThan(
+        DifficultyLevel difficulty, Integer count);
+    boolean existsByTitle(String title);
+    long countByDifficulty(DifficultyLevel difficulty);
+    
+    // Custom JPQL query
+    @Query("SELECT c FROM Course c WHERE c.enrolledCount < c.maxCapacity")
+    List<Course> findAvailableCourses();
+    
+    // Custom query with parameters
+    @Query("SELECT COUNT(e) FROM Enrollment e WHERE e.course.id = :courseId")
+    long countEnrollmentsByCourseId(@Param("courseId") Long courseId);
+    
+    // Native query
+    @Query(value = "SELECT * FROM courses WHERE difficulty = :difficulty " +
+                   "ORDER BY enrolled_count DESC LIMIT :limit", 
+           nativeQuery = true)
+    List<Course> findTopByDifficulty(@Param("difficulty") String difficulty, 
+                                     @Param("limit") int limit);
+    
+    // Entity graph to avoid N+1
+    @EntityGraph(attributePaths = {"enrollments", "enrollments.student"})
+    Optional<Course> findById(Long id);
+    
+    // Modifying query
+    @Modifying
+    @Query("UPDATE Course c SET c.enrolledCount = c.enrolledCount + 1 " +
+           "WHERE c.id = :courseId")
+    void incrementEnrolledCount(@Param("courseId") Long courseId);
+}
+```
+
+### Avoiding N+1 Queries
+
+**Problem:**
+```java
+// This causes N+1 queries
+List<Course> courses = courseRepository.findAll();
+for (Course course : courses) {
+    course.getEnrollments().size(); // Additional query for each course
+}
+```
+
+**Solutions:**
+1. Use `@EntityGraph`:
+```java
+@EntityGraph(attributePaths = {"enrollments"})
+List<Course> findAll();
+```
+
+2. Use `JOIN FETCH` in JPQL:
+```java
+@Query("SELECT c FROM Course c LEFT JOIN FETCH c.enrollments")
+List<Course> findAllWithEnrollments();
+```
+
+3. Use `@OneToMany` with `FetchType.EAGER` (use sparingly, only when always needed)
+
+### Concurrency Handling
+
+**Pessimistic Locking:**
+- Use `@Lock(LockModeType.PESSIMISTIC_WRITE)` for enrollment operations
+- Prevents concurrent modifications
+- Use with `@Transactional` for proper isolation
+
+**Example:**
+```java
+@Repository
+public interface CourseRepository extends JpaRepository<Course, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Course c WHERE c.id = :id")
+    Optional<Course> findByIdForUpdate(@Param("id") Long id);
+}
+
+@Service
+@Transactional
+public class EnrollmentService {
+    public void enroll(Long courseId, EnrollmentRequest request) {
+        Course course = courseRepository.findByIdForUpdate(courseId)
+            .orElseThrow(() -> new CourseNotFoundException(courseId));
+        
+        // Check capacity (locked, so no race condition)
+        if (course.getEnrolledCount() >= course.getMaxCapacity()) {
+            throw new CourseFullException(courseId);
+        }
+        
+        // Create enrollment and update count
+        // ...
+    }
+}
+```
+
+**Optimistic Locking:**
+- Use `@Version` for optimistic locking
+- Handles `OptimisticLockException` appropriately
+
+**Example:**
+```java
+@Entity
+public class Course {
+    @Version
+    private Long version;
+}
+
+// Service handles OptimisticLockException
+try {
+    courseRepository.save(course);
+} catch (OptimisticLockException e) {
+    // Retry or show error
+    throw new ConcurrentModificationException("Course was modified by another user");
+}
+```
+
+**Transaction Isolation:**
+- Use `@Transactional(isolation = Isolation.SERIALIZABLE)` for critical sections
+- Use `@Transactional(isolation = Isolation.REPEATABLE_READ)` for read consistency
+- Default is `READ_COMMITTED` which is usually sufficient
+
+### Data Initialization
+
+**Using @PostConstruct:**
+```java
+@Component
+public class DataInitializer {
+    private final CourseRepository courseRepository;
+    
+    public DataInitializer(CourseRepository courseRepository) {
+        this.courseRepository = courseRepository;
+    }
+    
+    @PostConstruct
+    @Transactional
+    public void init() {
+        if (courseRepository.count() == 0) {
+            seedCourses();
+        }
+    }
+    
+    private void seedCourses() {
+        Course course1 = new Course();
+        course1.setTitle("Introduction to Java");
+        course1.setInstructor("John Doe");
+        course1.setDifficulty(DifficultyLevel.BEGINNER);
+        course1.setMaxCapacity(50);
+        courseRepository.save(course1);
+        
+        // Add more courses...
+    }
+}
+```
+
+**Using data.sql:**
+```sql
+-- src/main/resources/data.sql
+INSERT INTO courses (title, instructor, duration, difficulty, description, max_capacity, enrolled_count)
+VALUES 
+    ('Introduction to Java', 'John Doe', '40 hours', 'BEGINNER', 'Learn Java basics', 50, 0),
+    ('Advanced Spring Boot', 'Jane Smith', '60 hours', 'ADVANCED', 'Master Spring Boot', 30, 0);
+```
+
+**Using Flyway/Liquibase:**
+- Use migration tools for production
+- Version control schema changes
+- Rollback support
+
+### Connection Configuration
+
+**application.properties:**
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/curseando
+spring.datasource.username=${DB_USERNAME:postgres}
+spring.datasource.password=${DB_PASSWORD:postgres}
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# Connection pool (HikariCP)
+spring.datasource.hikari.maximum-pool-size=10
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=30000
+spring.datasource.hikari.idle-timeout=600000
+spring.datasource.hikari.max-lifetime=1800000
+
+# JPA Configuration
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+```
+
+**Environment Variables:**
+- Use environment variables for sensitive data
+- Docker Compose passes env vars to Spring Boot
+- Use `${VAR_NAME:default}` syntax for defaults
+
+### Performance Optimization
+
+**Indexes:**
+- Add indexes on foreign keys automatically (JPA does this)
+- Add indexes on frequently filtered columns:
+  - `CREATE INDEX idx_courses_difficulty ON courses(difficulty);`
+  - `CREATE INDEX idx_enrollments_course_id ON enrollments(course_id);`
+- Add composite indexes for common query patterns:
+  - `CREATE INDEX idx_courses_difficulty_capacity ON courses(difficulty, enrolled_count);`
+
+**Query Optimization:**
+- Use `@EntityGraph` to avoid N+1 queries
+- Use `JOIN FETCH` in JPQL for eager loading
+- Use pagination for large datasets: `Pageable` and `Page<T>`
+- Use `@QueryHints` for query hints:
+```java
+@QueryHints(@QueryHint(name = "org.hibernate.fetchSize", value = "50"))
+List<Course> findAll();
+```
+
+**Denormalization:**
+- Consider maintaining `enrolled_count` field vs calculating dynamically
+- Trade-off: Storage space vs query performance
+- Use `@PrePersist` and `@PreUpdate` to maintain counters:
+```java
+@PrePersist
+@PreUpdate
+private void updateEnrolledCount() {
+    this.enrolledCount = enrollments.size();
+}
+```
+
+### Backup & Recovery
+
+- Use Docker volumes for data persistence
+- Document backup procedures
+- Consider export/import scripts for seed data
+- Use `pg_dump` for backups:
+```bash
+pg_dump -U postgres curseando > backup.sql
+```
+
+### Migration Strategy
+
+- Use Flyway or Liquibase for schema migrations (optional for this project)
+- Or rely on JPA `spring.jpa.hibernate.ddl-auto=update` for development
+- Document schema changes
+- Use version control for migration scripts
+
+**Flyway Example:**
+```sql
+-- V1__Create_courses_table.sql
+CREATE TABLE courses (...);
+
+-- V2__Add_enrolled_count_index.sql
+CREATE INDEX idx_courses_enrolled_count ON courses(enrolled_count);
+```
+
+## Best Practices Summary
+
+1. **Always use transactions** for write operations
+2. **Use lazy loading** for relationships (default)
+3. **Avoid N+1 queries** with `@EntityGraph` or `JOIN FETCH`
+4. **Handle concurrency** with pessimistic or optimistic locking
+5. **Add indexes** for frequently queried columns
+6. **Use appropriate data types** (BIGSERIAL for IDs, TEXT for descriptions)
+7. **Validate at database level** with constraints
+8. **Use environment variables** for connection configuration
+9. **Monitor query performance** with `spring.jpa.show-sql=true` in development
+10. **Use pagination** for large datasets

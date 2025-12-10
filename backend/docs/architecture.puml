@@ -1,0 +1,90 @@
+@startuml Architecture Diagram - Curseando Backend Layers
+
+title Architecture Diagram - Curseando Backend Layers
+
+
+package "REST API Layer" {
+    [CourseController] as CourseCtrl
+    [EnrollmentController] as EnrollmentCtrl
+}
+
+package "Service Layer" {
+    [CourseService] as CourseSvc
+    [EnrollmentService] as EnrollmentSvc
+}
+
+package "Repository Layer" {
+    [CourseRepository] as CourseRepo
+    [EnrollmentRepository] as EnrollmentRepo
+    [StudentRepository] as StudentRepo
+}
+
+package "Domain Model" {
+    [Course] as CourseEntity
+    [Enrollment] as EnrollmentEntity
+    [Student] as StudentEntity
+}
+
+package "DTOs" {
+    [CourseDTO] as CourseDTO
+    [EnrollmentRequest] as EnrollmentReq
+    [EnrollmentResponse] as EnrollmentResp
+}
+
+package "Exception Handling" {
+    [GlobalExceptionHandler] as ExceptionHandler
+    [Custom Exceptions] as CustomExceptions
+}
+
+database "PostgreSQL" {
+    [courses table] as CoursesTable
+    [enrollments table] as EnrollmentsTable
+    [students table] as StudentsTable
+}
+
+' Controller to Service
+CourseCtrl --> CourseSvc : uses
+EnrollmentCtrl --> EnrollmentSvc : uses
+
+' Service to Repository
+CourseSvc --> CourseRepo : uses
+EnrollmentSvc --> CourseRepo : uses
+EnrollmentSvc --> EnrollmentRepo : uses
+EnrollmentSvc --> StudentRepo : uses
+
+' Repository to Entity
+CourseRepo --> CourseEntity : manages
+EnrollmentRepo --> EnrollmentEntity : manages
+StudentRepo --> StudentEntity : manages
+
+' Controller to DTO
+CourseCtrl --> CourseDTO : returns
+EnrollmentCtrl --> EnrollmentReq : receives
+EnrollmentCtrl --> EnrollmentResp : returns
+
+' Service to DTO
+CourseSvc --> CourseDTO : converts to
+EnrollmentSvc --> EnrollmentResp : creates
+
+' Exception handling
+ExceptionHandler --> CustomExceptions : handles
+CourseCtrl ..> ExceptionHandler : throws
+EnrollmentCtrl ..> ExceptionHandler : throws
+
+' Repository to Database
+CourseRepo --> CoursesTable : persists
+EnrollmentRepo --> EnrollmentsTable : persists
+StudentRepo --> StudentsTable : persists
+
+note right of EnrollmentSvc
+    Uses @Transactional with
+    SERIALIZABLE isolation
+    for concurrency control
+end note
+
+note right of CourseRepo
+    Uses JPA/Hibernate
+    for ORM mapping
+end note
+
+@enduml

@@ -1,0 +1,822 @@
+# Backend Rules - Spring Boot 3.x
+
+**You are an expert in Java programming, Spring Boot 3.x, Spring Framework, Maven, JUnit, PostgreSQL, and related Java technologies. Your role is to provide code examples and guidance that adhere to best practices in Spring Boot development, following strict type safety, clear naming conventions, and Spring Boot's official style guide.**
+
+## Design Documentation
+
+**IMPORTANT: Before implementing features or making architectural changes, check the PlantUML design files in `backend/docs/`:**
+
+- `backend/docs/class-diagram.puml` - Domain model and entity relationships
+- `backend/docs/architecture.puml` - Layered architecture and component interactions
+- `backend/docs/enrollment-sequence.puml` - Sequence diagrams for key flows
+
+**When implementing code:**
+1. **Reference the design files** - Use them to understand the intended architecture
+2. **Follow the patterns** - Match the layer structure and relationships shown in diagrams
+3. **Update diagrams** - When making structural changes, update the relevant `.puml` files
+4. **Maintain consistency** - Ensure code matches the design documentation
+
+**Design files take precedence** - If there's a conflict between code and design docs, align code with the design or update the design to reflect intentional changes.
+
+## Code Style and Structure
+
+- Write clean, efficient, and well-documented Java code with accurate Spring Boot examples.
+- Use Spring Boot best practices and conventions throughout your code.
+- Implement RESTful API design patterns when creating web services.
+- Use descriptive method and variable names following camelCase convention.
+- Structure Spring Boot applications: controllers, services, repositories, models, configurations, exceptions, DTOs.
+
+### Package Structure
+```
+com.curseando
+├── controller      # REST controllers
+├── service         # Business logic layer
+├── repository      # Data access layer
+├── model           # Entity models (JPA)
+├── dto             # Data Transfer Objects
+├── exception       # Custom exceptions and handlers
+├── config          # Configuration classes
+└── util            # Utility classes
+```
+
+## Spring Boot Specifics
+
+### Application Setup
+- Use Spring Boot starters for quick project setup and dependency management.
+- Implement proper use of annotations:
+  - `@SpringBootApplication` - Main application class
+  - `@RestController` - REST controllers
+  - `@Service` - Service layer
+  - `@Repository` - Repository layer (optional, JPA provides it)
+  - `@Entity` - JPA entities
+  - `@Component` - General components
+- Utilize Spring Boot's auto-configuration features effectively.
+- Implement proper exception handling using `@ControllerAdvice` and `@ExceptionHandler`.
+
+### Entity Design (JPA)
+
+**Best Practices:**
+- Use `@Entity` with explicit `@Table(name = "table_name")` for table names
+- Use `@Id` with `@GeneratedValue(strategy = GenerationType.IDENTITY)` for primary keys
+- Use `@Column` annotations for constraints: `nullable`, `unique`, `length`
+- Use `@Enumerated(EnumType.STRING)` for enum fields (preferred over ORDINAL)
+- Use `@CreatedDate` and `@LastModifiedDate` with `@EntityListeners(AuditingEntityListener.class)`
+- Use `@ManyToOne(fetch = FetchType.LAZY)` for relationships (default, prevents N+1)
+- Use `@OneToMany(mappedBy = "...")` for inverse side of relationships
+- Use `@JoinColumn(name = "foreign_key_column")` to specify foreign key names
+
+**Example Entity:**
+```java
+@Entity
+@Table(name = "courses")
+public class Course {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false, length = 200)
+    private String title;
+    
+    @Column(nullable = false, length = 100)
+    private String instructor;
+    
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private DifficultyLevel difficulty;
+    
+    @Column(nullable = false)
+    private Integer maxCapacity;
+    
+    @Column(nullable = false)
+    private Integer enrolledCount = 0;
+    
+    // Constructors, getters, setters
+}
+```
+
+### Repository Layer
+
+**Best Practices:**
+- Extend `JpaRepository<Entity, Long>` for standard CRUD operations
+- Use method naming conventions: `findBy...`, `countBy...`, `existsBy...`, `deleteBy...`
+- Use `@Query` annotations for complex queries (JPQL or native SQL)
+- Use `@Modifying` with `@Query` for update/delete operations
+- Return `Optional<T>` for single results when appropriate
+- Use `@EntityGraph` or `JOIN FETCH` to avoid N+1 queries
+- Use `@Lock(LockModeType.PESSIMISTIC_WRITE)` for concurrency-sensitive queries
+
+**Example Repository:**
+```java
+@Repository
+public interface CourseRepository extends JpaRepository<Course, Long> {
+    List<Course> findByDifficulty(DifficultyLevel difficulty);
+    
+    @Query("SELECT c FROM Course c WHERE c.enrolledCount < c.maxCapacity")
+    List<Course> findAvailableCourses();
+    
+    @Query("SELECT COUNT(e) FROM Enrollment e WHERE e.course.id = :courseId")
+    long countEnrollmentsByCourseId(@Param("courseId") Long courseId);
+    
+    @EntityGraph(attributePaths = {"enrollments"})
+    Optional<Course> findById(Long id);
+}
+```
+
+### Service Layer
+
+**Best Practices:**
+- Use `@Service` annotation
+- Inject repositories via constructor (not field injection) for better testability
+- Use `@Transactional` for write operations
+- Handle business logic and validation here (not in controllers)
+- Throw custom exceptions for business rule violations
+- Use `@Transactional(isolation = Isolation.SERIALIZABLE)` or `@Lock(LockModeType.PESSIMISTIC_WRITE)` for concurrency-sensitive operations
+- Keep services focused (single responsibility principle)
+- Use DTOs for data transfer, not entities directly
+
+**Example Service:**
+```java
+@Service
+@Transactional(readOnly = true)
+public class CourseService {
+    private final CourseRepository courseRepository;
+    private final EnrollmentRepository enrollmentRepository;
+    
+    public CourseService(CourseRepository courseRepository, 
+                        EnrollmentRepository enrollmentRepository) {
+        this.courseRepository = courseRepository;
+        this.enrollmentRepository = enrollmentRepository;
+    }
+    
+    public List<Course> findAll() {
+        return courseRepository.findAll();
+    }
+    
+    public Optional<Course> findById(Long id) {
+        return courseRepository.findById(id);
+    }
+    
+    public List<Course> findByDifficulty(DifficultyLevel difficulty) {
+        return courseRepository.findByDifficulty(difficulty);
+    }
+    
+    @Transactional
+    public Course enrollStudent(Long courseId, EnrollmentRequest request) {
+        Course course = courseRepository.findById(courseId)
+            .orElseThrow(() -> new CourseNotFoundException(courseId));
+        
+        // Business logic validation
+        validateEnrollment(course, request);
+        
+        // Update enrolled count
+        course.setEnrolledCount(course.getEnrolledCount() + 1);
+        return courseRepository.save(course);
+    }
+    
+    private void validateEnrollment(Course course, EnrollmentRequest request) {
+        if (course.getEnrolledCount() >= course.getMaxCapacity()) {
+            throw new CourseFullException(course.getId());
+        }
+        if (enrollmentRepository.existsByCourseIdAndStudentEmail(
+                course.getId(), request.getEmail())) {
+            throw new DuplicateEnrollmentException(request.getEmail());
+        }
+    }
+}
+```
+
+### Controller Layer
+
+**Best Practices:**
+- Use `@RestController` and `@RequestMapping` at class level
+- Use `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping` at method level
+- Return `ResponseEntity<T>` for proper HTTP status codes
+- Use `@Valid` for request body validation
+- Use `@RequestParam` for query parameters
+- Use `@PathVariable` for path variables
+- Return DTOs, not entities directly
+- Keep controllers thin - delegate to services
+- Use proper HTTP status codes:
+  - 200 OK: Successful GET, PUT
+  - 201 Created: Successful POST
+  - 204 No Content: Successful DELETE
+  - 400 Bad Request: Validation errors
+  - 404 Not Found: Resource not found
+  - 409 Conflict: Business rule violations (duplicate, full)
+  - 500 Internal Server Error: Unexpected errors
+
+**Example Controller:**
+```java
+@RestController
+@RequestMapping("/api/courses")
+public class CourseController {
+    private final CourseService courseService;
+    
+    public CourseController(CourseService courseService) {
+        this.courseService = courseService;
+    }
+    
+    @GetMapping
+    public ResponseEntity<List<CourseDTO>> getAllCourses(
+            @RequestParam(required = false) DifficultyLevel difficulty) {
+        List<Course> courses = difficulty != null 
+            ? courseService.findByDifficulty(difficulty)
+            : courseService.findAll();
+        return ResponseEntity.ok(courses.stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList()));
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<CourseDTO> getCourseById(@PathVariable Long id) {
+        return courseService.findById(id)
+            .map(course -> ResponseEntity.ok(toDTO(course)))
+            .orElse(ResponseEntity.notFound().build());
+    }
+    
+    private CourseDTO toDTO(Course course) {
+        // Map entity to DTO
+    }
+}
+```
+
+## Naming Conventions
+
+- Use **PascalCase** for class names (e.g., `UserController`, `OrderService`, `CourseRepository`)
+- Use **camelCase** for method and variable names (e.g., `findUserById`, `isOrderValid`, `enrolledCount`)
+- Use **ALL_CAPS** for constants (e.g., `MAX_RETRY_ATTEMPTS`, `DEFAULT_PAGE_SIZE`)
+- Use **kebab-case** for REST endpoints (e.g., `/api/courses`, `/api/enrollments`)
+- Use descriptive names: `findByDifficultyAndAvailableSpots` not `find`
+
+## Java and Spring Boot Usage
+
+- Use **Java 17 or later** features when applicable:
+  - Records for DTOs: `public record CourseDTO(Long id, String title) {}`
+  - Sealed classes for restricted hierarchies
+  - Pattern matching for instanceof
+  - Text blocks for multi-line strings
+- Leverage Spring Boot 3.x features and best practices
+- Use Spring Data JPA for database operations when applicable
+- Implement proper validation using Bean Validation (Jakarta Validation):
+  - `@Valid` - Validate request body
+  - `@NotNull`, `@NotBlank`, `@Email`, `@Min`, `@Max`, `@Size`
+  - Create custom validators for complex rules
+
+## Configuration and Properties
+
+- Use `application.properties` or `application.yml` for configuration
+- Implement environment-specific configurations using Spring Profiles (`@Profile`)
+- Use `@ConfigurationProperties` for type-safe configuration properties
+- Use environment variables for sensitive data (database credentials)
+- Configure CORS: `@CrossOrigin` or `WebMvcConfigurer`
+
+**Example Configuration:**
+```java
+@Configuration
+@EnableWebMvc
+public class WebConfig implements WebMvcConfigurer {
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+            .allowedOrigins("http://localhost:4200")
+            .allowedMethods("GET", "POST", "PUT", "DELETE")
+            .allowedHeaders("*")
+            .allowCredentials(true);
+    }
+}
+```
+
+## Dependency Injection and IoC
+
+- Use **constructor injection** over field injection for better testability
+- Leverage Spring's IoC container for managing bean lifecycles
+- Use `@RequiredArgsConstructor` from Lombok (if using Lombok) to reduce boilerplate
+- Prefer `@Autowired` on constructor (implicit in Spring Boot 4.3+)
+
+## Exception Handling
+
+- Create custom exceptions extending `RuntimeException`
+- Use `@ControllerAdvice` with `@ExceptionHandler` for global handling
+- Return consistent error response format: `{ "error": "...", "message": "...", "timestamp": "..." }`
+- Map exceptions to appropriate HTTP status codes
+
+**Example Exception Handler:**
+```java
+@ControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidationErrors(
+            MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+            errors.put(error.getField(), error.getDefaultMessage()));
+        return ResponseEntity.badRequest()
+            .body(new ErrorResponse("Validation failed", errors));
+    }
+    
+    @ExceptionHandler(CourseFullException.class)
+    public ResponseEntity<ErrorResponse> handleCourseFull(CourseFullException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(new ErrorResponse("Course is full", ex.getMessage()));
+    }
+    
+    @ExceptionHandler(DuplicateEnrollmentException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateEnrollment(
+            DuplicateEnrollmentException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(new ErrorResponse("Already enrolled", ex.getMessage()));
+    }
+}
+```
+
+## Testing
+
+- Write unit tests using JUnit 5 and Spring Boot Test
+- Use `MockMvc` for testing web layers
+- Implement integration tests using `@SpringBootTest`
+- Use `@DataJpaTest` for repository layer tests
+- Use `@MockBean` to mock dependencies
+- Use `@WebMvcTest` for controller tests
+
+**Example Test:**
+```java
+@SpringBootTest
+@Transactional
+class CourseServiceTest {
+    @Autowired
+    private CourseService courseService;
+    
+    @Autowired
+    private CourseRepository courseRepository;
+    
+    @Test
+    void shouldFindAllCourses() {
+        // Given
+        Course course = new Course();
+        course.setTitle("Test Course");
+        courseRepository.save(course);
+        
+        // When
+        List<Course> courses = courseService.findAll();
+        
+        // Then
+        assertThat(courses).hasSize(1);
+    }
+}
+```
+
+## Performance and Scalability
+
+- Implement caching strategies using Spring Cache abstraction (`@Cacheable`, `@CacheEvict`)
+- Use async processing with `@Async` for non-blocking operations
+- Implement proper database indexing and query optimization
+- Use `@EntityGraph` or `JOIN FETCH` to avoid N+1 queries
+- Use pagination for large datasets: `Pageable` and `Page<T>`
+
+## Security
+
+- Implement Spring Security for authentication and authorization (if needed)
+- Use proper password encoding (e.g., BCrypt)
+- Implement CORS configuration when necessary
+- Validate and sanitize all user input
+- Use parameterized queries (JPA handles this automatically)
+
+## Logging and Monitoring
+
+- Use SLF4J with Logback for logging
+- Implement proper log levels: ERROR, WARN, INFO, DEBUG
+- Use Spring Boot Actuator for application monitoring and metrics
+- Log important business events (enrollments, errors)
+
+**Example Logging:**
+```java
+@Slf4j
+@Service
+public class CourseService {
+    public void enrollStudent(Long courseId, EnrollmentRequest request) {
+        log.info("Attempting enrollment: courseId={}, email={}", courseId, request.getEmail());
+        try {
+            // enrollment logic
+            log.info("Enrollment successful: courseId={}, email={}", courseId, request.getEmail());
+        } catch (Exception e) {
+            log.error("Enrollment failed: courseId={}, email={}", courseId, request.getEmail(), e);
+            throw e;
+        }
+    }
+}
+```
+
+## API Documentation (Swagger/OpenAPI)
+
+**Springdoc OpenAPI is the standard for API documentation in Spring Boot 3.x. It automatically generates interactive API documentation from your code annotations, making it easy to test and explore endpoints.**
+
+### Maven Dependency
+
+Add Springdoc OpenAPI to `pom.xml`:
+```xml
+<dependency>
+    <groupId>org.springdoc</groupId>
+    <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    <version>2.3.0</version>
+</dependency>
+```
+
+### Configuration
+
+**Basic Configuration Class:**
+```java
+@Configuration
+public class OpenApiConfig {
+    
+    @Bean
+    public OpenAPI curseandoOpenAPI() {
+        return new OpenAPI()
+            .info(new Info()
+                .title("Curseando API")
+                .description("API documentation for Curseando course platform")
+                .version("v1.0")
+                .contact(new Contact()
+                    .name("Curseando Team")
+                    .email("support@curseando.com"))
+                .license(new License()
+                    .name("Apache 2.0")
+                    .url("https://www.apache.org/licenses/LICENSE-2.0.html")))
+            .servers(List.of(
+                new Server().url("http://localhost:8080").description("Local Server"),
+                new Server().url("http://backend:8080").description("Docker Server")
+            ));
+    }
+}
+```
+
+**Application Properties:**
+```properties
+# Springdoc OpenAPI Configuration
+springdoc.api-docs.path=/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.operationsSorter=method
+springdoc.swagger-ui.tagsSorter=alpha
+springdoc.swagger-ui.tryItOutEnabled=true
+springdoc.swagger-ui.filter=true
+springdoc.swagger-ui.display-request-duration=true
+```
+
+### Controller Annotations
+
+**Annotate Controllers with OpenAPI Annotations:**
+```java
+@RestController
+@RequestMapping("/api/courses")
+@Tag(name = "Courses", description = "Course management API")
+public class CourseController {
+    private final CourseService courseService;
+    
+    public CourseController(CourseService courseService) {
+        this.courseService = courseService;
+    }
+    
+    @GetMapping
+    @Operation(
+        summary = "Get all courses",
+        description = "Retrieve a list of all courses. Optionally filter by difficulty level.",
+        tags = {"Courses"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Successfully retrieved courses",
+            content = @Content(
+                mediaType = "application/json",
+                array = @ArraySchema(schema = @Schema(implementation = CourseDTO.class))
+            )
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = "Internal server error",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    public ResponseEntity<List<CourseDTO>> getAllCourses(
+            @Parameter(description = "Filter by difficulty level", example = "BEGINNER")
+            @RequestParam(required = false) DifficultyLevel difficulty) {
+        List<Course> courses = difficulty != null 
+            ? courseService.findByDifficulty(difficulty)
+            : courseService.findAll();
+        return ResponseEntity.ok(courses.stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList()));
+    }
+    
+    @GetMapping("/{id}")
+    @Operation(
+        summary = "Get course by ID",
+        description = "Retrieve a specific course by its unique identifier",
+        tags = {"Courses"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Course found",
+            content = @Content(schema = @Schema(implementation = CourseDTO.class))
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Course not found",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    public ResponseEntity<CourseDTO> getCourseById(
+            @Parameter(description = "Course ID", required = true, example = "1")
+            @PathVariable Long id) {
+        return courseService.findById(id)
+            .map(course -> ResponseEntity.ok(toDTO(course)))
+            .orElse(ResponseEntity.notFound().build());
+    }
+    
+    @PostMapping("/{id}/enroll")
+    @Operation(
+        summary = "Enroll in a course",
+        description = "Enroll a student in a specific course. Validates course capacity and duplicate enrollment.",
+        tags = {"Enrollments"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "201",
+            description = "Successfully enrolled",
+            content = @Content(schema = @Schema(implementation = EnrollmentResponse.class))
+        ),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Invalid request data",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Course not found",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = "Course full or duplicate enrollment",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    public ResponseEntity<EnrollmentResponse> enroll(
+            @Parameter(description = "Course ID", required = true, example = "1")
+            @PathVariable Long id,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                description = "Enrollment request",
+                required = true,
+                content = @Content(schema = @Schema(implementation = EnrollmentRequest.class))
+            )
+            @Valid @RequestBody EnrollmentRequest request) {
+        EnrollmentResponse response = enrollmentService.enroll(id, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+}
+```
+
+### DTO Annotations
+
+**Annotate DTOs for Better Documentation:**
+```java
+@Schema(description = "Course information")
+public class CourseDTO {
+    
+    @Schema(description = "Course unique identifier", example = "1")
+    private Long id;
+    
+    @Schema(description = "Course title", example = "Introduction to Java", required = true)
+    private String title;
+    
+    @Schema(description = "Instructor name", example = "John Doe", required = true)
+    private String instructor;
+    
+    @Schema(description = "Course duration", example = "40 hours", required = true)
+    private String duration;
+    
+    @Schema(description = "Difficulty level", example = "BEGINNER", allowableValues = {"BEGINNER", "INTERMEDIATE", "ADVANCED"})
+    private DifficultyLevel difficulty;
+    
+    @Schema(description = "Course description", example = "Learn Java programming fundamentals")
+    private String description;
+    
+    @Schema(description = "Maximum enrollment capacity", example = "50", minimum = "1")
+    private Integer maxCapacity;
+    
+    @Schema(description = "Current number of enrolled students", example = "25", minimum = "0")
+    private Integer enrolledCount;
+    
+    @Schema(description = "Available spots", example = "25", readOnly = true)
+    public Integer getAvailableSpots() {
+        return maxCapacity - enrolledCount;
+    }
+    
+    // Constructors, getters, setters
+}
+
+@Schema(description = "Enrollment request")
+public class EnrollmentRequest {
+    
+    @Schema(description = "Student full name", example = "Jane Smith", required = true, minLength = 2)
+    @NotBlank(message = "Full name is required")
+    @Size(min = 2, max = 200, message = "Full name must be between 2 and 200 characters")
+    private String fullName;
+    
+    @Schema(description = "Student email address", example = "jane.smith@example.com", required = true)
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email must be valid")
+    private String email;
+    
+    // Constructors, getters, setters
+}
+
+@Schema(description = "Error response")
+public class ErrorResponse {
+    
+    @Schema(description = "Error type", example = "CourseFullException")
+    private String error;
+    
+    @Schema(description = "Error message", example = "Course with ID 1 is full")
+    private String message;
+    
+    @Schema(description = "Timestamp of the error", example = "2024-01-15T10:30:00Z")
+    private LocalDateTime timestamp;
+    
+    // Constructors, getters, setters
+}
+```
+
+### Enum Documentation
+
+**Document Enums:**
+```java
+@Schema(description = "Course difficulty level")
+public enum DifficultyLevel {
+    @Schema(description = "Beginner level - suitable for newcomers")
+    BEGINNER,
+    
+    @Schema(description = "Intermediate level - requires some prior knowledge")
+    INTERMEDIATE,
+    
+    @Schema(description = "Advanced level - for experienced developers")
+    ADVANCED
+}
+```
+
+### Accessing Swagger UI
+
+**After starting the application:**
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- API Docs (JSON): `http://localhost:8080/api-docs`
+- API Docs (YAML): `http://localhost:8080/api-docs.yaml`
+
+**In Docker:**
+- Swagger UI: `http://localhost:8080/swagger-ui.html` (if port 8080 is exposed)
+- Or access via frontend proxy if configured
+
+### Best Practices
+
+1. **Always document endpoints** - Use `@Operation` for all public endpoints
+2. **Document all responses** - Use `@ApiResponse` for success and error cases
+3. **Document parameters** - Use `@Parameter` for path variables and query parameters
+4. **Document request/response models** - Use `@Schema` on DTOs
+5. **Provide examples** - Use `example` attribute in `@Schema` and `@Parameter`
+6. **Group endpoints** - Use `@Tag` to group related endpoints
+7. **Document validation rules** - Include validation constraints in schema descriptions
+8. **Keep documentation in sync** - Update annotations when changing endpoints
+
+### Customization
+
+**Customize Swagger UI Theme:**
+```java
+@Configuration
+public class OpenApiConfig {
+    
+    @Bean
+    public OpenAPI curseandoOpenAPI() {
+        return new OpenAPI()
+            .info(new Info()
+                .title("Curseando API")
+                .description("API documentation for Curseando course platform")
+                .version("v1.0"))
+            .components(new Components()
+                .addSecuritySchemes("bearer-jwt", new SecurityScheme()
+                    .type(SecurityScheme.Type.HTTP)
+                    .scheme("bearer")
+                    .bearerFormat("JWT")
+                    .in(SecurityScheme.In.HEADER)
+                    .name("Authorization")));
+    }
+}
+```
+
+**Security Configuration (if adding authentication):**
+```java
+@SecurityRequirement(name = "bearer-jwt")
+@RestController
+public class CourseController {
+    // Controller methods
+}
+```
+
+### Benefits
+
+- **Interactive Testing** - Test endpoints directly from the browser
+- **Automatic Documentation** - Generated from code, always up-to-date
+- **Team Collaboration** - Frontend developers can see all available endpoints
+- **API Exploration** - Easy to discover and understand API structure
+- **Request/Response Examples** - See expected formats and examples
+- **Validation Documentation** - See validation rules for each field
+
+### Example Complete Controller
+
+```java
+@RestController
+@RequestMapping("/api/courses")
+@Tag(name = "Courses", description = "Course management endpoints")
+public class CourseController {
+    private final CourseService courseService;
+    
+    public CourseController(CourseService courseService) {
+        this.courseService = courseService;
+    }
+    
+    @GetMapping
+    @Operation(
+        summary = "Get all courses",
+        description = "Retrieve a list of all courses. Optionally filter by difficulty level using the query parameter.",
+        tags = {"Courses"}
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Successfully retrieved courses"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    public ResponseEntity<List<CourseDTO>> getAllCourses(
+            @Parameter(description = "Filter by difficulty level", example = "BEGINNER")
+            @RequestParam(required = false) DifficultyLevel difficulty) {
+        // Implementation
+    }
+}
+```
+
+**Always include Swagger/OpenAPI documentation in your Spring Boot projects - it's invaluable for API exploration, testing, and team collaboration!**
+
+## Data Access and ORM
+
+- Use Spring Data JPA for database operations
+- Implement proper entity relationships and cascading
+- Use database migrations with Flyway or Liquibase (optional for this project)
+- Use `@Transactional` with proper isolation levels for concurrency
+
+## Build and Deployment
+
+- Use Maven for dependency management and build processes
+- Implement proper profiles for different environments (dev, test, prod)
+- Use Docker for containerization
+- Configure environment variables for database connection
+
+## Dependencies (Maven)
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>2.3.0</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-devtools</artifactId>
+        <scope>runtime</scope>
+        <optional>true</optional>
+    </dependency>
+</dependencies>
+```
+
+## Core Principles
+
+- Follow SOLID principles
+- Maintain high cohesion and low coupling
+- Use DTOs to separate API layer from domain model
+- Handle concurrency properly (pessimistic locking for enrollments)
+- Validate input at both controller and service layers
+- Return meaningful error messages
+- Keep methods focused and testable

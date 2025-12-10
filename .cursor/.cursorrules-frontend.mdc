@@ -1,0 +1,606 @@
+# Frontend Rules - Angular 15+ with Signals
+
+**You are an Angular, TypeScript, Tailwind CSS, and RxJS expert focused on creating scalable and high-performance web applications. Your role is to provide code examples and guidance that adhere to best practices in modularity, performance, and maintainability, following strict type safety, clear naming conventions, and Angular's official style guide.**
+
+## Key Development Principles
+
+1. **Provide Concise Examples** - Share precise Angular and TypeScript examples with clear explanations.
+2. **Immutability & Pure Functions** - Apply immutability principles and pure functions wherever possible, especially within services and state management.
+3. **Component Composition** - Favor component composition over inheritance to enhance modularity.
+4. **Meaningful Naming** - Use descriptive variable names like `isUserLoggedIn`, `userPermissions`, `fetchData()`.
+5. **File Naming** - Enforce kebab-case naming for files (e.g., `user-profile.component.ts`) and match Angular's conventions for file suffixes.
+
+## Angular and TypeScript Best Practices
+
+### Type Safety with Interfaces
+- Define data models using interfaces for explicit types
+- Maintain strict typing to avoid `any`
+- Use type guards when needed: `function isCourse(obj: any): obj is Course { ... }`
+- Use generic types for reusable components: `<T extends BaseModel>`
+
+**Example:**
+```typescript
+export interface Course {
+  id: number;
+  title: string;
+  instructor: string;
+  duration: string;
+  difficulty: DifficultyLevel;
+  description: string;
+  maxCapacity: number;
+  enrolledCount: number;
+}
+
+export enum DifficultyLevel {
+  BEGINNER = 'BEGINNER',
+  INTERMEDIATE = 'INTERMEDIATE',
+  ADVANCED = 'ADVANCED'
+}
+```
+
+### Full Utilization of TypeScript
+- Avoid using `any`; use TypeScript's type system
+- Use `unknown` when type is truly unknown, then narrow with type guards
+- Use union types: `type Status = 'loading' | 'success' | 'error'`
+- Use intersection types when combining types
+- Leverage utility types: `Partial<T>`, `Pick<T, K>`, `Omit<T, K>`, `Record<K, V>`
+
+### Organized Code Structure
+- Structure files with imports at the top, followed by:
+  1. Angular core and common modules
+  2. RxJS modules
+  3. Angular-specific modules (FormsModule, RouterModule)
+  4. Core application imports
+  5. Shared module imports
+  6. Environment-specific imports
+  7. Relative path imports
+- Then class definition, properties, methods, and exports
+
+### Optional Chaining & Nullish Coalescing
+- Leverage optional chaining (`?.`) and nullish coalescing (`??`) to prevent null/undefined errors
+- Use `?.` for safe property access: `course?.title ?? 'Unknown'`
+- Use `??` for default values: `const count = enrolledCount ?? 0`
+
+## Angular Signals (Primary State Management)
+
+**Signals are the preferred way to manage reactive state in Angular 15+. Use signals instead of RxJS Observables for component and service state when possible.**
+
+### Signal Basics
+
+**Creating Signals:**
+```typescript
+import { signal, computed, effect } from '@angular/core';
+
+// Writable signal
+courses = signal<Course[]>([]);
+loading = signal<boolean>(false);
+error = signal<string | null>(null);
+selectedDifficulty = signal<DifficultyLevel | null>(null);
+
+// Computed signal (derived state)
+filteredCourses = computed(() => {
+  const courses = this.courses();
+  const difficulty = this.selectedDifficulty();
+  
+  if (!difficulty) return courses;
+  return courses.filter(c => c.difficulty === difficulty);
+});
+
+availableSpots = computed(() => {
+  return this.courses().map(c => ({
+    ...c,
+    spotsLeft: c.maxCapacity - c.enrolledCount
+  }));
+});
+```
+
+### Signal Patterns in Services
+
+**Service with Signals:**
+```typescript
+@Injectable({ providedIn: 'root' })
+export class CourseService {
+  private http = inject(HttpClient);
+  
+  // State signals
+  courses = signal<Course[]>([]);
+  loading = signal<boolean>(false);
+  error = signal<string | null>(null);
+  
+  // Computed signals
+  availableCourses = computed(() => 
+    this.courses().filter(c => c.enrolledCount < c.maxCapacity)
+  );
+  
+  // Methods that update signals
+  loadCourses(difficulty?: DifficultyLevel): void {
+    this.loading.set(true);
+    this.error.set(null);
+    
+    const url = difficulty 
+      ? `/api/courses?difficulty=${difficulty}`
+      : '/api/courses';
+    
+    this.http.get<Course[]>(url).subscribe({
+      next: (courses) => {
+        this.courses.set(courses);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.error.set(err.message || 'Failed to load courses');
+        this.loading.set(false);
+      }
+    });
+  }
+  
+  updateCourse(courseId: number, updates: Partial<Course>): void {
+    this.courses.update(courses => 
+      courses.map(c => c.id === courseId ? { ...c, ...updates } : c)
+    );
+  }
+  
+  addCourse(course: Course): void {
+    this.courses.update(courses => [...courses, course]);
+  }
+}
+```
+
+### Signal Patterns in Components
+
+**Component with Signals:**
+```typescript
+@Component({
+  selector: 'app-course-catalog',
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div>
+      @if (service.loading()) {
+        <div>Loading...</div>
+      }
+      
+      @if (service.error(); as error) {
+        <div class="error">{{ error }}</div>
+      }
+      
+      <div class="filters">
+        <button (click)="selectDifficulty(null)">All</button>
+        <button (click)="selectDifficulty('BEGINNER')">Beginner</button>
+        <button (click)="selectDifficulty('INTERMEDIATE')">Intermediate</button>
+        <button (click)="selectDifficulty('ADVANCED')">Advanced</button>
+      </div>
+      
+      <div class="courses">
+        @for (course of filteredCourses(); track course.id) {
+          <app-course-card [course]="course" />
+        }
+      </div>
+    </div>
+  `
+})
+export class CourseCatalogComponent {
+  service = inject(CourseService);
+  
+  // Component-level signals
+  selectedDifficulty = signal<DifficultyLevel | null>(null);
+  
+  // Computed signal combining service and component state
+  filteredCourses = computed(() => {
+    const courses = this.service.courses();
+    const difficulty = this.selectedDifficulty();
+    
+    if (!difficulty) return courses;
+    return courses.filter(c => c.difficulty === difficulty);
+  });
+  
+  // Effects for side effects (use sparingly)
+  constructor() {
+    effect(() => {
+      // Side effect: log when courses change
+      console.log('Courses updated:', this.service.courses().length);
+    });
+    
+    // Load courses on init
+    this.service.loadCourses();
+  }
+  
+  selectDifficulty(difficulty: DifficultyLevel | null): void {
+    this.selectedDifficulty.set(difficulty);
+    this.service.loadCourses(difficulty || undefined);
+  }
+}
+```
+
+### Signal Best Practices
+
+1. **Use signals for component state** - Prefer signals over component properties
+2. **Use computed for derived state** - Always use `computed()` for values derived from other signals
+3. **Use effect() sparingly** - Only for side effects (logging, external API calls, DOM manipulation)
+4. **Update signals immutably** - Use `.update()` for immutable updates: `courses.update(c => [...c, newCourse])`
+5. **Use OnPush change detection** - Enable `ChangeDetectionStrategy.OnPush` when using signals
+6. **Read signals in templates** - Use `signal()` syntax in templates: `{{ courses() }}`
+7. **Combine signals** - Use computed to combine multiple signals
+
+### Signals vs RxJS
+
+**When to use Signals:**
+- Component state
+- Service state (simple reactive state)
+- Derived/computed values
+- Simple reactive updates
+
+**When to use RxJS Observables:**
+- HTTP requests (HttpClient returns Observables)
+- Complex async operations (debounce, throttle, combineLatest)
+- Event streams
+- WebSocket connections
+- When you need operators (map, filter, switchMap, etc.)
+
+**Hybrid Approach:**
+```typescript
+// Use Observable for HTTP, convert to signal
+loadCourses(): void {
+  this.loading.set(true);
+  this.http.get<Course[]>('/api/courses')
+    .pipe(
+      catchError(err => {
+        this.error.set(err.message);
+        return of([]);
+      })
+    )
+    .subscribe(courses => {
+      this.courses.set(courses);
+      this.loading.set(false);
+    });
+}
+```
+
+## Standalone Components
+
+- Use standalone components (Angular 14+)
+- Import only what you need: `imports: [CommonModule, FormsModule, RouterModule]`
+- Promote code reusability without relying on Angular modules
+
+**Example:**
+```typescript
+@Component({
+  selector: 'app-course-card',
+  standalone: true,
+  imports: [CommonModule, RouterModule],
+  template: `...`
+})
+export class CourseCardComponent {
+  @Input({ required: true }) course!: Course;
+  @Output() enroll = new EventEmitter<Course>();
+}
+```
+
+## Direct Service Injection with `inject()`
+
+- Use the `inject()` function to inject services directly within component logic
+- Reduces boilerplate code
+- Works in components, directives, services, and functions
+
+**Example:**
+```typescript
+export class CourseCatalogComponent {
+  private courseService = inject(CourseService);
+  private router = inject(Router);
+  
+  // Use in methods
+  navigateToCourse(id: number): void {
+    this.router.navigate(['/courses', id]);
+  }
+}
+```
+
+## File Structure and Naming Conventions
+
+- **Component Files**: `*.component.ts`, `*.component.html`, `*.component.css`
+- **Service Files**: `*.service.ts`
+- **Module Files**: `*.module.ts` (if using modules)
+- **Directive Files**: `*.directive.ts`
+- **Pipe Files**: `*.pipe.ts`
+- **Interface Files**: `*.interface.ts` or `*.model.ts`
+- **Test Files**: `*.spec.ts`
+- **General Naming**: kebab-case for all filenames
+
+**Project Structure:**
+```
+src/
+├── app/
+│   ├── core/
+│   │   └── services/        # Singleton services
+│   ├── shared/
+│   │   ├── components/       # Shared components
+│   │   ├── models/          # Interfaces, enums
+│   │   └── pipes/           # Shared pipes
+│   ├── features/
+│   │   ├── courses/
+│   │   │   ├── course-catalog.component.ts
+│   │   │   ├── course-detail.component.ts
+│   │   │   └── course.service.ts
+│   │   └── enrollments/
+│   │       ├── enrollment-form.component.ts
+│   │       └── enrollment.service.ts
+│   └── app.component.ts
+├── assets/
+└── environments/
+```
+
+## Coding Standards
+
+- Use **single quotes** (`'`) for string literals
+- Use **2-space indentation**
+- Avoid trailing whitespace and unused variables
+- Prefer `const` for constants and immutable variables
+- Use `readonly` for immutable arrays/objects
+- Utilize template literals for string interpolation and multi-line strings
+- Use semicolons consistently
+
+## Angular-Specific Development Guidelines
+
+### Forms
+
+**Reactive Forms (Preferred):**
+```typescript
+export class EnrollmentFormComponent {
+  private fb = inject(FormBuilder);
+  private enrollmentService = inject(EnrollmentService);
+  
+  enrollmentForm = this.fb.group({
+    fullName: ['', [Validators.required, Validators.minLength(2)]],
+    email: ['', [Validators.required, Validators.email]]
+  });
+  
+  isSubmitting = signal<boolean>(false);
+  error = signal<string | null>(null);
+  
+  onSubmit(): void {
+    if (this.enrollmentForm.valid) {
+      this.isSubmitting.set(true);
+      this.enrollmentService.enroll(this.enrollmentForm.value)
+        .subscribe({
+          next: () => {
+            this.isSubmitting.set(false);
+            this.enrollmentForm.reset();
+          },
+          error: (err) => {
+            this.error.set(err.message);
+            this.isSubmitting.set(false);
+          }
+        });
+    }
+  }
+}
+```
+
+- Use reactive forms (`FormBuilder`, `FormGroup`, `FormControl`)
+- Use `Validators` for validation
+- Display validation errors with Tailwind CSS styling
+- Use signals for form state: `isSubmitting = signal<boolean>(false)`
+- Reset forms after successful submission
+
+### Routing
+
+- Configure routes in `app-routing.module.ts` or standalone routes
+- Use `Router` service for navigation
+- Use route parameters: `ActivatedRoute.params` or `ActivatedRoute.paramMap`
+- Use `routerLink` directive in templates
+- Enable lazy loading for feature modules
+
+**Example:**
+```typescript
+export const routes: Routes = [
+  { path: '', component: CourseCatalogComponent },
+  { path: 'courses/:id', component: CourseDetailComponent },
+  { path: '**', redirectTo: '' }
+];
+```
+
+### Template Syntax
+
+- Use `@if`, `@for`, `@switch` (Angular 17+ control flow)
+- Use `async` pipe for observables in templates
+- Use `trackBy` function in `@for` for large lists
+- Use `@defer` for lazy loading components
+
+**Example:**
+```typescript
+@if (loading()) {
+  <div>Loading...</div>
+} @else if (error(); as errorMessage) {
+  <div class="error">{{ errorMessage }}</div>
+} @else {
+  @for (course of courses(); track course.id) {
+    <app-course-card [course]="course" />
+  } @empty {
+    <div>No courses available</div>
+  }
+}
+```
+
+## Tailwind CSS Styling
+
+### Utility-First Approach
+- Use Tailwind classes directly in templates
+- Configure custom colors in `tailwind.config.js` for Coursera-inspired design
+- Use responsive classes: `md:`, `lg:`, `xl:`, `2xl:`
+- Use Tailwind forms plugin: `@tailwindcss/forms`
+
+### Design Patterns
+
+**Cards:**
+```html
+<div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+  <h3 class="text-xl font-semibold text-gray-900">{{ course.title }}</h3>
+  <p class="text-gray-600 mt-2">{{ course.description }}</p>
+</div>
+```
+
+**Buttons:**
+```html
+<button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md 
+               transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+  Enroll Now
+</button>
+```
+
+**Forms:**
+```html
+<input type="email" 
+       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+              focus:border-blue-500 focus:ring-blue-500">
+```
+
+**Grid Layout:**
+```html
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+  @for (course of courses(); track course.id) {
+    <app-course-card [course]="course" />
+  }
+</div>
+```
+
+**Alerts:**
+```html
+<div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded">
+  Enrollment successful!
+</div>
+```
+
+### Tailwind Configuration
+
+```javascript
+// tailwind.config.js
+module.exports = {
+  content: [
+    "./src/**/*.{html,ts}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#eff6ff',
+          600: '#2563eb',
+          700: '#1d4ed8',
+        }
+      }
+    },
+  },
+  plugins: [
+    require('@tailwindcss/forms'),
+  ],
+}
+```
+
+## Error Handling
+
+- Display user-friendly error messages
+- Use Tailwind alert components for errors/success
+- Handle HTTP errors gracefully
+- Show loading states with Tailwind spinners
+- Use signals for error state: `error = signal<string | null>(null)`
+
+**Example:**
+```typescript
+enroll(courseId: number, request: EnrollmentRequest): void {
+  this.loading.set(true);
+  this.error.set(null);
+  
+  this.http.post<EnrollmentResponse>(`/api/enrollments`, { courseId, ...request })
+    .pipe(
+      catchError(err => {
+        this.error.set(this.getErrorMessage(err));
+        return of(null);
+      })
+    )
+    .subscribe(response => {
+      this.loading.set(false);
+      if (response) {
+        this.success.set(true);
+      }
+    });
+}
+
+private getErrorMessage(error: any): string {
+  if (error.status === 409) {
+    return 'You are already enrolled in this course';
+  }
+  if (error.status === 400) {
+    return 'Invalid enrollment data';
+  }
+  return 'An error occurred. Please try again.';
+}
+```
+
+## Performance Optimization
+
+- Use `OnPush` change detection strategy when using signals
+- Lazy load routes when appropriate
+- Use `trackBy` function in `@for` for large lists
+- Optimize bundle size (tree-shaking)
+- Use `@defer` for non-critical components
+- Use `NgOptimizedImage` for images
+- Avoid unnecessary re-renders with signals
+
+**Example:**
+```typescript
+@Component({
+  selector: 'app-course-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @for (course of courses(); track trackByCourseId($index, course)) {
+      <app-course-card [course]="course" />
+    }
+  `
+})
+export class CourseListComponent {
+  trackByCourseId(index: number, course: Course): number {
+    return course.id;
+  }
+}
+```
+
+## Security Best Practices
+
+- Prevent XSS by relying on Angular's built-in sanitization
+- Avoid `innerHTML` unless using `DomSanitizer`
+- Sanitize dynamic content using Angular's trusted sanitization methods
+- Validate all user input
+- Use HTTPS in production
+
+## Core Principles
+
+- Use Angular's dependency injection and `inject()` function
+- Focus on reusable, modular code
+- Optimize for Core Web Vitals (LCP, INP, CLS)
+- Use signals for reactive state management (preferred)
+- Use RxJS for complex async operations
+- Maintain strict type safety
+- Follow Angular's official style guide
+
+## Environment Configuration
+
+- Use `environment.ts` for API base URL
+- Use environment variables in Docker (build-time or runtime)
+- Configure API URL: `http://backend:8080` in Docker, `http://localhost:8080` locally
+
+**Example:**
+```typescript
+// environment.ts
+export const environment = {
+  production: false,
+  apiUrl: 'http://localhost:8080/api'
+};
+
+// service.ts
+private apiUrl = environment.apiUrl;
+```
+
+## Reference
+
+- Refer to Angular's official documentation for components, services, and modules
+- Follow Angular Signals documentation: https://angular.dev/guide/signals
+- Use Tailwind CSS documentation: https://tailwindcss.com/docs
+- Follow TypeScript best practices: https://www.typescriptlang.org/docs/
