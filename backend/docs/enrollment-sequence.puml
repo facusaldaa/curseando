@@ -1,0 +1,111 @@
+@startuml Enrollment Sequence Diagram
+
+title Enrollment Sequence Diagram - Curseando Enrollment Flow
+autonumber
+
+actor Client
+participant "EnrollmentController" as Controller
+participant "EnrollmentService" as Service
+participant "CourseRepository" as CourseRepo
+participant "StudentRepository" as StudentRepo
+participant "EnrollmentRepository" as EnrollmentRepo
+database PostgreSQL
+
+Client -> Controller: POST /api/enrollments\n{EnrollmentRequest}
+activate Controller
+
+Controller -> Controller: Validate @Valid request
+Controller -> Service: enroll(request)
+activate Service
+
+Service -> CourseRepo: findById(courseId)\nwith lock
+activate CourseRepo
+CourseRepo -> PostgreSQL: SELECT with lock
+PostgreSQL --> CourseRepo: Course entity
+CourseRepo --> Service: Course
+deactivate CourseRepo
+
+alt Course not found
+    Service --> Controller: throw CourseNotFoundException
+    Controller --> Client: 404 Not Found
+    deactivate Service
+    deactivate Controller
+    return
+end
+
+Service -> Service: validateEnrollment(course, request)
+activate Service
+
+Service -> Service: Check if course.isFull()
+alt Course is full
+    Service --> Controller: throw CourseFullException
+    Controller --> Client: 409 Conflict
+    deactivate Service
+    deactivate Controller
+    return
+end
+
+Service -> EnrollmentRepo: existsByCourseIdAndStudentEmail()
+activate EnrollmentRepo
+EnrollmentRepo -> PostgreSQL: SELECT check
+PostgreSQL --> EnrollmentRepo: boolean
+EnrollmentRepo --> Service: exists
+deactivate EnrollmentRepo
+
+alt Duplicate enrollment exists
+    Service --> Controller: throw DuplicateEnrollmentException
+    Controller --> Client: 409 Conflict
+    deactivate Service
+    deactivate Controller
+    return
+end
+
+deactivate Service
+Service -> StudentRepo: findByEmail(email)
+activate StudentRepo
+StudentRepo -> PostgreSQL: SELECT by email
+PostgreSQL --> StudentRepo: Student or null
+StudentRepo --> Service: Optional<Student>
+deactivate StudentRepo
+
+alt Student not found
+    Service -> Service: Create new Student
+    Service -> StudentRepo: save(newStudent)
+    activate StudentRepo
+    StudentRepo -> PostgreSQL: INSERT student
+    PostgreSQL --> StudentRepo: Student
+    StudentRepo --> Service: Student
+    deactivate StudentRepo
+end
+
+Service -> Service: Create Enrollment(course, student)
+Service -> EnrollmentRepo: save(enrollment)
+activate EnrollmentRepo
+EnrollmentRepo -> PostgreSQL: INSERT enrollment
+PostgreSQL --> EnrollmentRepo: Enrollment
+EnrollmentRepo --> Service: Enrollment
+deactivate EnrollmentRepo
+
+Service -> Service: course.setEnrolledCount(+1)
+Service -> CourseRepo: save(course)
+activate CourseRepo
+CourseRepo -> PostgreSQL: UPDATE course
+PostgreSQL --> CourseRepo: Course
+CourseRepo --> Service: Course
+deactivate CourseRepo
+
+Service -> Service: Build EnrollmentResponse
+Service --> Controller: EnrollmentResponse
+deactivate Service
+
+Controller --> Client: 201 Created\n{EnrollmentResponse}
+deactivate Controller
+
+note over Service,PostgreSQL
+    Transaction boundary:
+    @Transactional(isolation=SERIALIZABLE)
+    Ensures atomicity and
+    prevents race conditions
+end note
+
+@enduml

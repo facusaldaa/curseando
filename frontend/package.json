@@ -1,0 +1,98 @@
+{
+  "name": "curseando-frontend",
+  "version": "1.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test"
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/animations": "19.1.1",
+    "@angular/common": "19.1.1",
+    "@angular/compiler": "19.1.1",
+    "@angular/core": "19.1.1",
+    "@angular/forms": "19.1.1",
+    "@angular/platform-browser": "19.1.1",
+    "@angular/platform-browser-dynamic": "19.1.1",
+    "@angular/router": "19.1.1",
+    "rxjs": "7.8.1",
+    "tslib": "^2.3.0",
+    "zone.js": "~0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "19.1.1",
+    "@angular-devkit/core": "19.1.1",
+    "@angular/cli": "19.1.1",
+    "@angular/compiler-cli": "19.1.1",
+    "@types/file-saver": "^2.0.7",
+    "@types/jest": "^29.5.14",
+    "typescript": "~5.7.3",
+    "tailwindcss": "^3.4.0",
+    "@tailwindcss/forms": "^0.5.7",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "jest": "^29.7.0",
+    "jest-preset-angular": "^14.5.0"
+  },
+   "jest": {
+    "preset": "jest-preset-angular",
+    "setupFilesAfterEnv": [
+      "<rootDir>/setup-jest.ts"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!@ngrx|(?!deck.gl)|ng-dynamic)"
+    ],
+    "moduleDirectories": [
+      "node_modules",
+      "src"
+    ],
+    "moduleFileExtensions": [
+      "ts",
+      "html",
+      "js",
+      "json",
+      "mjs"
+    ],
+    "moduleNameMapper": {
+      "^src/(.*)$": "<rootDir>/src/$1",
+      "^@core/(.*)$": [
+        "<rootDir>/src/app/core/$1"
+      ]
+    },
+    "collectCoverage": true,
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "html",
+      "text",
+      "lcov",
+      "clover"
+    ],
+    "collectCoverageFrom": [
+      "src/app/**/*.ts",
+      "!src/app/**/*.spec.ts",
+      "!src/app/**/*.module.ts",
+      "!src/app/**/index.ts",
+      "!src/app/**/*.interface.ts",
+      "!src/app/**/*.enum.ts",
+      "!src/app/**/*.model.ts",
+      "!src/app/core/api/**/*"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 50,
+        "functions": 50,
+        "lines": 50,
+        "statements": 50
+      }
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/",
+      "/src/app/core/api/"
+    ]
+  }
+}
+
