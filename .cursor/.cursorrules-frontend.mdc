@@ -303,6 +303,44 @@ export class CourseCatalogComponent {
 - **Pipe Files**: `*.pipe.ts`
 - **Interface Files**: `*.interface.ts` or `*.model.ts`
 - **Test Files**: `*.spec.ts`
+
+## Testing
+
+**MANDATORY: All new code must include tests. Tests are required and must pass before code is complete.**
+
+- Write unit tests for components and services using Jest
+- Test component rendering and user interactions
+- Test service methods and HTTP calls using `HttpTestingController`
+- Use Angular testing utilities (`TestBed`, `HttpTestingController`)
+- Use Jest (not Jasmine) for mocking - use `jest.fn()` instead of `jasmine.createSpyObj()`
+- Tests run automatically during Docker build - build fails if tests fail
+- Always test success paths, error paths, and edge cases
+- Use test utilities and mock data helpers from `src/app/shared/testing/`
+
+**Example:**
+```typescript
+describe('CourseService', () => {
+  let service: CourseService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [HttpClientTestingModule],
+      providers: [CourseService]
+    });
+    service = TestBed.inject(CourseService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  it('should load courses', () => {
+    service.loadCourses();
+    const req = httpMock.expectOne('/api/courses');
+    expect(req.request.method).toBe('GET');
+    req.flush([mockCourse]);
+    expect(service.courses()).toEqual([mockCourse]);
+  });
+});
+```
 - **General Naming**: kebab-case for all filenames
 
 **Project Structure:**
